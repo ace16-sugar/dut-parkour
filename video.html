@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>《大工跑酷：早八求生记》项目讲解视频</title>
+<style>
+  :root{
+    --bg:#080d14;
+    --panel:#111a24;
+    --line:rgba(140,175,215,.18);
+    --text:#e8f0fa;
+    --dim:#8fa4bb;
+    --accent:#4da3ff;
+    --gold:#f4c76a;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;}
+  body{
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(42,96,160,.28), transparent 60%),
+      radial-gradient(900px 500px at 90% 110%, rgba(120,80,190,.20), transparent 65%),
+      var(--bg);
+    color:var(--text);
+    font-family:"PingFang SC","Microsoft YaHei","Helvetica Neue",system-ui,sans-serif;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:24px 16px 36px;min-height:100%;
+  }
+  .wrap{width:100%;max-width:960px;}
+  .tag{
+    display:inline-block;font-size:12px;letter-spacing:.14em;color:var(--gold);
+    border:1px solid rgba(244,199,106,.35);border-radius:999px;
+    padding:4px 12px;margin-bottom:14px;
+  }
+  h1{font-size:24px;line-height:1.35;margin:0 0 8px;font-weight:600;letter-spacing:.02em;}
+  .meta{color:var(--dim);font-size:13px;margin:0 0 18px;}
+  .player{
+    position:relative;background:#000;border-radius:14px;overflow:hidden;
+    border:1px solid var(--line);
+    box-shadow:0 24px 60px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.03) inset;
+  }
+  video{display:block;width:100%;height:auto;aspect-ratio:16/9;background:#000;}
+  .hint{color:var(--dim);font-size:12px;margin:10px 0 0;text-align:center;}
+  .actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px;}
+  .btn{
+    flex:1 1 200px;display:flex;align-items:center;justify-content:center;gap:8px;
+    text-decoration:none;font-size:14px;font-weight:600;letter-spacing:.02em;
+    padding:13px 16px;border-radius:10px;transition:transform .15s, background .2s, border-color .2s;
+  }
+  .btn.primary{background:linear-gradient(135deg,#2f7fd6,#4da3ff);color:#fff;box-shadow:0 10px 24px rgba(77,163,255,.28);}
+  .btn.ghost{background:rgba(255,255,255,.03);color:var(--text);border:1px solid var(--line);}
+  .btn:active{transform:scale(.98);}
+  .foot{
+    margin-top:26px;padding-top:18px;border-top:1px solid var(--line);
+    display:flex;flex-wrap:wrap;gap:8px 22px;align-items:center;
+    color:var(--dim);font-size:12.5px;
+  }
+  .foot a{color:var(--accent);text-decoration:none;}
+  .playhint{
+    position:absolute;left:50%;bottom:14%;transform:translateX(-50%);
+    background:rgba(0,0,0,.55);backdrop-filter:blur(6px);
+    color:#fff;font-size:13px;padding:8px 16px;border-radius:999px;border:1px solid rgba(255,255,255,.18);
+    pointer-events:none;transition:opacity .3s;
+  }
+  @media (max-width:520px){
+    h1{font-size:20px;}
+    body{padding:18px 12px 28px;justify-content:flex-start;}
+    .actions{margin-top:18px;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="tag">PROJECT · 项目讲解</div>
+  <h1>《大工跑酷：早八求生记》</h1>
+  <p class="meta">5 分钟讲解 · 1920×1080 · 全程字幕（无配音版）</p>
+
+  <div class="player">
+    <video id="v" controls playsinline webkit-playsinline x5-playsinline
+           preload="metadata" poster="video/poster.jpg">
+      <source src="video/dut-parkour.mp4" type="video/mp4">
+      你的浏览器不支持 HTML5 视频播放，请点击下方按钮下载观看。
+    </video>
+    <div class="playhint" id="hint">点击播放</div>
+  </div>
+  <p class="hint">微信内如无法播放，请点右上角「···」选择「在浏览器打开」</p>
+
+  <div class="actions">
+    <a class="btn primary" href="video/dut-parkour.mp4" download>下载完整版（5.3 MB）</a>
+    <a class="btn ghost" href="video/moments30s.mp4" download>30 秒短片（0.7 MB）</a>
+  </div>
+
+  <div class="foot">
+    <span>游戏在线试玩：<a href="index.html">ace16-sugar.github.io/dut-parkour</a></span>
+    <span>技术栈：Python 3 · tkinter · Pillow</span>
+  </div>
+</div>
+
+<script>
+  var v = document.getElementById('v');
+  var hint = document.getElementById('hint');
+  function hideHint(){ hint.style.opacity = '0'; }
+  v.addEventListener('play', hideHint);
+  v.addEventListener('ended', function(){ hint.style.opacity = '1'; hint.textContent = '点击重播'; });
+  document.querySelector('.player').addEventListener('click', function(){ hideHint(); });
+</script>
+</body>
+</html>
