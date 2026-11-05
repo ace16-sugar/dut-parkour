@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>大工跑酷：早八求生记</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: #070a0e; overflow: hidden;
+    font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  }
+  body { display: flex; align-items: center; justify-content: center; }
+
+  /* 舞台：保持 800:400 的比例，手机竖屏/横屏都整屏可见 */
+  #stage {
+    position: relative;
+    width: min(100vw, 800px, 200vh);
+    aspect-ratio: 2 / 1;
+    background: #0f141c;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  canvas { display: block; width: 100%; height: 100%; }
+
+  /* 三个页面共用：绝对定位铺满舞台，通过 hidden 切换（多页面切换） */
+  .screen {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 1.4%;
+    padding: 3% 4%;
+    background: #0f141c;
+    color: #fff; text-align: center;
+    overflow-y: auto;
+  }
+  .screen.hidden { display: none; }
+
+  .logo { width: 64px; height: 64px; border-radius: 12px; object-fit: cover; }
+  h1 {
+    margin: 0;
+    font-size: clamp(22px, 4.6vh, 38px);
+    color: #ffd166;
+    letter-spacing: 2px;
+    text-shadow: 0 3px 0 rgba(0, 0, 0, .35);
+  }
+  .sub { margin: 0; color: #9fb0c4; font-size: clamp(11px, 1.9vh, 14px); }
+
+  .rules {
+    width: min(92%, 560px);
+    margin: 0;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, .06);
+    color: #cfd9e6;
+    font-size: clamp(10px, 1.8vh, 13px);
+    line-height: 1.7;
+    text-align: left;
+  }
+
+  .diffs { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+  .diffBtn {
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 7px 11px; min-width: 92px;
+    border-radius: 12px; border: 2px solid #888;
+    background: rgba(255, 255, 255, .06);
+    cursor: pointer; transition: transform .1s, background .15s;
+  }
+  .diffBtn:hover { background: rgba(255, 255, 255, .14); }
+  .diffBtn:active { transform: scale(.96); }
+  .diffBtn:disabled { opacity: .35; cursor: wait; }
+  .dName { font-size: clamp(13px, 2vh, 16px); font-weight: 700; }
+  .dMeta { font-size: clamp(9px, 1.5vh, 11px); opacity: .8; }
+
+  .hint { margin: 0; color: #7f8ea1; font-size: clamp(9px, 1.6vh, 12px); }
+
+  .endTitle {
+    margin: 0; font-size: clamp(20px, 4.4vh, 34px);
+    font-weight: 800; letter-spacing: 1px;
+  }
+  .endTitle.win { color: #ffd166; text-shadow: 0 0 18px rgba(255, 209, 102, .35); }
+  .endTitle.lose { color: #ff5d5d; text-shadow: 0 0 18px rgba(255, 93, 93, .3); }
+
+  .endInfo { color: #cfd9e6; font-size: clamp(11px, 2vh, 15px); line-height: 1.9; }
+  .endInfo b { color: #ff9ec4; }
+  .comment { font-size: clamp(12px, 2.1vh, 16px); color: #9fb0c4; }
+  .comment.gold { color: #ffd166; font-weight: 700; }
+
+  .endBtns { display: flex; gap: 12px; margin-top: 4px; }
+  .btn {
+    padding: 9px 22px; border-radius: 999px; border: none;
+    font-size: clamp(12px, 2vh, 15px); font-weight: 700;
+    cursor: pointer; font-family: inherit;
+    transition: transform .1s, filter .15s;
+  }
+  .btn:active { transform: scale(.96); }
+  .btn.primary { background: #ffd166; color: #241a00; }
+  .btn.ghost { background: rgba(255, 255, 255, .1); color: #cfd9e6; }
+  .loading { color: #9fb0c4; font-size: 13px; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="game" width="800" height="400"></canvas>
+
+  <!-- ================= 开始界面（StartFrame） ================= -->
+  <section id="startScreen" class="screen">
+    <img class="logo" id="startLogo" alt="校徽">
+    <h1>大工跑酷：早八求生记</h1>
+    <p class="sub">选一个难度，坚持到赶上上课铃</p>
+    <div class="rules">
+      【玩法说明】<br>
+      1. 按空格键 / 点击屏幕跳跃（支持二段跳），躲避障碍物，收集玉兰花。<br>
+      2. 跳上悬空的横板可以躲避地面障碍物。<br>
+      3. 撑到目标时间即可成功赶上早八！
+    </div>
+    <div class="diffs" id="diffButtons"></div>
+    <p class="hint" id="loadHint">资源加载中…</p>
+  </section>
+
+  <!-- ================= 结算界面（EndFrame） ================= -->
+  <section id="endScreen" class="screen hidden">
+    <img class="logo" id="endLogo" alt="校徽">
+    <h2 class="endTitle" id="endTitle"></h2>
+    <div class="endInfo" id="endInfo"></div>
+    <p class="comment" id="endComment"></p>
+    <div class="endBtns">
+      <button class="btn primary" id="againBtn">再来一局</button>
+      <button class="btn ghost" id="quitBtn">退出游戏</button>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+"use strict";
+
+/* ============================================================
+   全局常量（与桌面版 main.py 保持一致，便于两版手感相同）
+   ============================================================ */
+const W = 800, H = 400;
+const GROUND_Y = 360;          // 地面线
+const GRAVITY = 1.0;           // 重力加速度（像素/帧²）
+const JUMP_SPEED = -15.0;      // 起跳初速度（向上为负）
+const STEP = 1 / 60;           // 固定步长：60 步/秒（保证不同刷新率手感一致）
+const MAX_HP = 10;
+const PLAYER_X = 100;          // 主角固定 X 坐标
+const HEAD_SIZE = 40;
+const BODY_H = 54;
+const PLAYER_H = HEAD_SIZE + BODY_H;   // 94
+const STICK_COLOR = "#2f6fd0";         // 火柴人蓝色线条
+const INTRO_INVINCIBLE = 1.0;          // 无敌帧 1 秒（游戏内时间）
+const BG_SCROLL_SPEED = 2.4;           // 背景滚动速度
+const PIXEL_W = 200, PIXEL_H = 100;    // 像素化中间分辨率
+
+/* 【难度参数传递】开始界面 → 游戏主界面 → 结算界面 */
+const DIFFICULTIES = {
+  "简单": { target: 60,  mult: 1.0, color: "#2fbf71" },
+  "普通": { target: 120, mult: 1.2, color: "#3a86ff" },
+  "困难": { target: 180, mult: 1.5, color: "#9d4edd" },
+  "极难": { target: 240, mult: 1.8, color: "#f77f00" },
+  "地狱": { target: 300, mult: 2.2, color: "#e63946" }
+};
+const DIFF_ORDER = ["简单", "普通", "困难", "极难", "地狱"];
+
+/* 障碍物配置：ground 贴地 / air 悬浮 / overhead 头顶天桥 */
+const OBSTACLES = {
+  book:    { w: 26,  h: 24, color: "#d93636", speed: 6.0, place: "ground" },
+  paper:   { w: 24,  h: 50, color: "#f2f2f2", speed: 6.0, place: "ground" },
+  frisbee: { w: 38,  h: 18, color: "#ffd23f", speed: 6.0, place: "air"    },
+  animal:  { w: 38,  h: 30, color: "#8b5a2b", speed: 8.5, place: "ground" },
+  bridge:  { w: 190, h: 40, color: "#8895a6", speed: 5.5, place: "overhead" }
+};
+const SPAWN_KINDS = ["book", "paper", "frisbee", "animal", "bridge"];
+const SPAWN_WEIGHTS = [30, 22, 18, 20, 10];
+const PETAL_SIZE = 18;
+
+/* ============================================================
+   工具函数
+   ============================================================ */
+const randInt = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
+
+/** 【AABB 碰撞 / 收集物检测】轴对齐包围盒相交判断 */
+function aabb(a, b) {
+  return a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
+}
+
+/** 按权重随机挑一种障碍物 */
+function randomKind() {
+  const total = SPAWN_WEIGHTS.reduce((s, v) => s + v, 0);
+  let r = Math.random() * total;
+  for (let i = 0; i < SPAWN_KINDS.length; i++) {
+    r -= SPAWN_WEIGHTS[i];
+    if (r <= 0) return SPAWN_KINDS[i];
+  }
+  return SPAWN_KINDS[0];
+}
+
+/** 读取图片 */
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("图片加载失败：" + src));
+    img.src = src;
+  });
+}
+
+/**
+ * 【PIL 像素化】的浏览器等价实现
+ * 桌面版用 PIL：缩小到 200x100 → Image.Resampling.NEAREST 放大回 800x400。
+ * 这里用离屏 Canvas 做同样的事：
+ *   1. 先居中裁剪成 2:1，避免照片被拉伸变形；
+ *   2. 缩小到 200x100（缩小时开启平滑，等价于 LANCZOS 的降采样效果）；
+ *   3. 放大回 800x400 时关闭 imageSmoothing，等价于 NEAREST，像素块锐利。
+ * 只在启动时执行一次并缓存，游戏循环内直接 drawImage 缓存结果。
+ */
+function pixelate(img) {
+  const crop = document.createElement("canvas");
+  const targetRatio = W / H;
+  let sw = img.width, sh = img.height;
+  if (sw / sh > targetRatio) sw = sh * targetRatio;
+  else sh = sw / targetRatio;
+  const sx = (img.width - sw) / 2;
+  const sy = (img.height - sh) / 2;
+
+  const small = document.createElement("canvas");
+  small.width = PIXEL_W;
+  small.height = PIXEL_H;
+  const sctx = small.getContext("2d");
+  sctx.imageSmoothingEnabled = true;
+  sctx.imageSmoothingQuality = "high";
+  sctx.drawImage(img, sx, sy, sw, sh, 0, 0, PIXEL_W, PIXEL_H);
+
+  const out = document.createElement("canvas");
+  out.width = W;
+  out.height = H;
+  const octx = out.getContext("2d");
+  octx.imageSmoothingEnabled = false;        // NEAREST：放大后是硬边像素块
+  octx.drawImage(small, 0, 0, PIXEL_W, PIXEL_H, 0, 0, W, H);
+  return out;
+}
+
+/* ============================================================
+   游戏主体（对应桌面版 PlayFrame 的核心逻辑）
+   ============================================================ */
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const BG_FILES = Array.from({ length: 12 }, (_, i) => `assets/bg_${String(i + 1).padStart(2, "0")}.jpg`);
+
+const assets = { head: null, backgrounds: [] };
+
+const game = {
+  state: "start",          // start | play | end
+  difficulty: "普通",
+  targetTime: 120,
+  speedMult: 1.2,
+
+  elapsed: 0,
+  hp: MAX_HP,
+  petalCount: 0,
+  player: null,
+  obstacles: [],
+  platforms: [],
+  petals: [],
+
+  bgIndex: 0,
+  bgX: [0, W],
+  bgSwitchTimer: 360,
+
+  spawnTimer: 60,
+  platformTimer: 150,
+  petalTimer: 120,
+
+  running: false,
+  rafId: 0,
+  lastTs: 0,
+  acc: 0,
+  jumpLocked: false,
+
+  /* ---------- 开局 / 重置：难度参数在这里落地 ---------- */
+  startGame(name) {
+    if (!assets.backgrounds.length) return;   // 资源未加载完不允许开局
+    const cfg = DIFFICULTIES[name];
+    this.difficulty = name;
+    this.targetTime = cfg.target;     // 【难度参数传递】目标秒数
+    this.speedMult = cfg.mult;        // 【难度参数传递】速度倍率
+
+    this.elapsed = 0;
+    this.hp = MAX_HP;
+    this.petalCount = 0;
+    this.obstacles = [];
+    this.platforms = [];
+    this.petals = [];
+    this.player = {
+      y: GROUND_Y - PLAYER_H,
+      vy: 0,
+      jumps: 0,
+      invUntil: -99,
+      onPlatform: null,
+      prevBottom: GROUND_Y
+    };
+    this.bgIndex = randInt(0, assets.backgrounds.length - 1);
+    this.bgX = [0, W];
+    this.bgSwitchTimer = 360;
+    this.spawnTimer = randInt(45, 90);
+    this.platformTimer = randInt(120, 220);
+    this.petalTimer = randInt(90, 180);
+    this.jumpLocked = false;
+
+    this.state = "play";
+    hideScreens();
+    this.startLoop();
+  },
+
+  startLoop() {
+    if (this.running) return;
+    this.running = true;
+    this.lastTs = performance.now();
+    this.acc = 0;
+    this.rafId = requestAnimationFrame(loop);
+  },
+
+  stopLoop() {
+    this.running = false;
+    if (this.rafId) cancelAnimationFrame(this.rafId);
+    this.rafId = 0;
+  },
+
+  /* ---------- 输入：空格 / 点击（二段跳） ---------- */
+  jump() {
+    if (this.state !== "play" || !this.running) return;
+    if (this.jumpLocked) return;
+    this.jumpLocked = true;                 // 防止长按重复触发
+    if (this.player.jumps < 2) {            // 地面跳 + 空中二段跳
+      this.player.vy = JUMP_SPEED;
+      this.player.jumps += 1;
+    }
+  },
+
+  releaseJump() {
+    this.jumpLocked = false;
+  },
+
+  /* ---------- 固定步长主循环 ---------- */
+  step() {
+    this.elapsed += STEP;
+
+    /* 【胜利判定逻辑】存活时间达标 → 立即胜利结算 */
+    if (this.elapsed >= this.targetTime) {
+      this.finish(true);
+      return;
+    }
+
+    const ramp = Math.min(2.0, this.elapsed * 0.02);   // 随时间缓慢加速
+    this.updateBackground();
+    this.updateObstacles(ramp);
+    this.updatePlatforms(ramp);
+    this.updatePetals(ramp);
+    this.updatePlayer();
+    this.checkCollisions();
+    this.collectPetals();
+  },
+
+  /* ---------- 背景：双图无缝滚动 + 随机换图 ---------- */
+  updateBackground() {
+    /* 【双图滚动】两张（同一张）像素背景首尾相接一起左移，
+       一张完全移出左边后挪到另一张右侧，形成无限循环。 */
+    for (let i = 0; i < 2; i++) {
+      this.bgX[i] -= BG_SCROLL_SPEED;
+      if (this.bgX[i] <= -W) this.bgX[i] += W * 2;
+    }
+    this.bgSwitchTimer -= 1;
+    if (this.bgSwitchTimer <= 0) {
+      let next = randInt(0, assets.backgrounds.length - 1);
+      if (next === this.bgIndex) next = (next + 1) % assets.backgrounds.length;
+      this.bgIndex = next;
+      this.bgSwitchTimer = randInt(300, 480);      // 5~8 秒换一张
+    }
+  },
+
+  /* ---------- 障碍物：生成 / 移动 / 回收 ---------- */
+  updateObstacles(ramp) {
+    this.spawnTimer -= 1;
+    if (this.spawnTimer <= 0) {
+      const kind = randomKind();
+      const cfg = OBSTACLES[kind];
+      let y = GROUND_Y - cfg.h;
+      if (cfg.place === "air") y = GROUND_Y - 50 - cfg.h;
+      else if (cfg.place === "overhead") y = GROUND_Y - 190;
+      this.obstacles.push({
+        kind,
+        w: cfg.w, h: cfg.h, color: cfg.color,
+        x: W + 20, y,
+        speed: (cfg.speed + ramp) * this.speedMult,
+        rect() { return [this.x, this.y, this.x + this.w, this.y + this.h]; }
+      });
+      this.spawnTimer = Math.max(10, Math.floor(randInt(38, 88) / this.speedMult));
+    }
+    for (const ob of this.obstacles) ob.x -= ob.speed;
+    /* 【垃圾回收】飞出左侧屏幕的障碍物从数组中删除 */
+    this.obstacles = this.obstacles.filter(ob => ob.x + ob.w >= 0);
+  },
+
+  /* ---------- 平台：生成 / 移动 / 回收（独立列表） ---------- */
+  updatePlatforms(ramp) {
+    this.platformTimer -= 1;
+    if (this.platformTimer <= 0) {
+      const p = {
+        w: randInt(90, 160), h: 12,
+        x: W + 20, y: randInt(240, 300),
+        speed: (5.5 + ramp) * this.speedMult,
+        rect() { return [this.x, this.y, this.x + this.w, this.y + this.h]; }
+      };
+      this.platforms.push(p);
+      // 平台上大概率摆 1~3 朵玉兰花，鼓励玩家跳上去
+      if (Math.random() < 0.75) {
+        const n = randInt(1, 3);
+        for (let i = 0; i < n; i++) {
+          this.petals.push(this.makePetal(
+            p.x + randInt(12, Math.max(13, p.w - 30)),
+            p.y - PETAL_SIZE - 14,
+            p.speed
+          ));
+        }
+      }
+      this.platformTimer = Math.max(70, Math.floor(randInt(150, 260) / this.speedMult));
+    }
+    for (const p of this.platforms) p.x -= p.speed;
+    this.platforms = this.platforms.filter(p => p.x + p.w >= 0);
+  },
+
+  makePetal(x, y, speed) {
+    return {
+      x, y, speed,
+      rect() { return [this.x, this.y, this.x + PETAL_SIZE, this.y + PETAL_SIZE]; }
+    };
+  },
+
+  /* ---------- 花瓣：空中生成 / 移动 / 回收（独立列表） ---------- */
+  updatePetals(ramp) {
+    this.petalTimer -= 1;
+    if (this.petalTimer <= 0) {
+      this.petals.push(this.makePetal(
+        W + 20,
+        randInt(200, 290),
+        (5.0 + ramp) * this.speedMult
+      ));
+      this.petalTimer = Math.max(60, Math.floor(randInt(110, 200) / this.speedMult));
+    }
+    for (const pt of this.petals) pt.x -= pt.speed;
+    this.petals = this.petals.filter(pt => pt.x + PETAL_SIZE >= 0);
+  },
+
+  /* ---------- 主角物理 ---------- */
+  updatePlayer() {
+    const p = this.player;
+    p.prevBottom = p.y + PLAYER_H;
+    p.vy += GRAVITY;
+    p.y += p.vy;
+    const bottom = p.y + PLAYER_H;
+
+    // 地面着陆（优先级最高）
+    if (bottom >= GROUND_Y) {
+      p.y = GROUND_Y - PLAYER_H;
+      p.vy = 0;
+      p.jumps = 0;
+      p.onPlatform = null;
+      return;
+    }
+
+    /* 【单向平台碰撞判定】（本作难点）
+       平台是"单向"的：上升时可以穿过，下落时才能踩住。
+       1) 只有 vy > 0（正在下落）才做判定，上升阶段直接跳过 → 可从下往上穿；
+       2) 记录上一帧脚底 prevBottom，若 prevBottom <= 平台顶面 <= 本帧脚底，
+          说明这一帧脚底跨过了平台顶面，判定为着陆；
+       3) 水平方向必须与平台重叠，否则只是从旁边擦过；
+       4) 着陆后把 y 吸附到 平台顶面 - 主角高度，vy 归零、跳跃次数清零，
+          于是可以在平台上继续起跳（含二段跳）。 */
+    if (p.vy > 0) {
+      const px1 = PLAYER_X + 3;
+      const px2 = PLAYER_X + HEAD_SIZE - 3;
+      for (const plat of this.platforms) {
+        if (px2 < plat.x + 4 || px1 > plat.x + plat.w - 4) continue;
+        if (p.prevBottom <= plat.y && plat.y <= bottom) {
+          p.y = plat.y - PLAYER_H;
+          p.vy = 0;
+          p.jumps = 0;
+          p.onPlatform = plat;
+          break;
+        }
+      }
+    }
+  },
+
+  playerRect() {
+    const p = this.player;
+    return [PLAYER_X + 3, p.y + 4, PLAYER_X + HEAD_SIZE - 3, p.y + PLAYER_H - 4];
+  },
+
+  /* ---------- 障碍物碰撞：扣血 + 无敌帧 ---------- */
+  checkCollisions() {
+    if (this.elapsed < this.player.invUntil) return;   // 无敌帧内不再受伤
+    const pr = this.playerRect();
+    for (let i = 0; i < this.obstacles.length; i++) {
+      if (aabb(pr, this.obstacles[i].rect())) {
+        this.obstacles.splice(i, 1);                    // 撞到的障碍物消失
+        this.hp -= 1;
+        this.player.invUntil = this.elapsed + INTRO_INVINCIBLE;
+        if (this.hp <= 0) this.finish(false);
+        return;                                         // 一帧只结算一次碰撞
+      }
+    }
+  },
+
+  /* ---------- 花瓣收集（AABB） ---------- */
+  collectPetals() {
+    const pr = this.playerRect();
+    for (let i = this.petals.length - 1; i >= 0; i--) {
+      if (aabb(pr, this.petals[i].rect())) {
+        this.petals.splice(i, 1);
+        this.petalCount += 1;                           // 每朵玉兰花 +1
+      }
+    }
+  },
+
+  /* ---------- 结算 ---------- */
+  finish(won) {
+    this.stopLoop();
+    this.state = "end";
+    showEnd(won);
+  },
+
+  /* ============================================================
+     渲染
+     ============================================================ */
+  draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    // 背景：两张像素背景首尾相接（双图滚动）
+    const bg = assets.backgrounds[this.bgIndex];
+    if (bg) {
+      ctx.drawImage(bg, Math.round(this.bgX[0]), 0);
+      ctx.drawImage(bg, Math.round(this.bgX[1]), 0);
+    }
+
+    // 地面
+    ctx.fillStyle = "#dfe9f0";
+    ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+
+    // 悬空平台（木色 + 绿色顶边）
+    for (const p of this.platforms) {
+      ctx.fillStyle = "#b07a43";
+      ctx.strokeStyle = "#6f4c29";
+      ctx.lineWidth = 2;
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.strokeRect(p.x + 1, p.y + 1, p.w - 2, p.h - 2);
+      ctx.fillStyle = "#67c27a";
+      ctx.fillRect(p.x + 2, p.y, p.w - 4, 4);
+    }
+
+    // 玉兰花瓣（粉色圆块 + 高光）
+    for (const pt of this.petals) {
+      ctx.beginPath();
+      ctx.arc(pt.x + PETAL_SIZE / 2, pt.y + PETAL_SIZE / 2, PETAL_SIZE / 2, 0, Math.PI * 2);
+      ctx.fillStyle = "#ff9ec4";
+      ctx.fill();
+      ctx.strokeStyle = "#e46b9a";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(pt.x + 8, pt.y + 7, 3.2, 0, Math.PI * 2);
+      ctx.fillStyle = "#ffd6e6";
+      ctx.fill();
+    }
+
+    // 障碍物
+    for (const ob of this.obstacles) this.drawObstacle(ob);
+
+    // 主角（含无敌帧闪烁）
+    this.drawPlayer();
+
+    // HUD（血条 + 时间 + 玉兰花数量）
+    this.drawHUD();
+  },
+
+  drawObstacle(ob) {
+    ctx.save();
+    if (ob.kind === "book") {
+      ctx.fillStyle = ob.color;
+      ctx.strokeStyle = "#8e1f1f";
+      ctx.lineWidth = 2;
+      ctx.fillRect(ob.x, ob.y, ob.w, ob.h);
+      ctx.strokeRect(ob.x + 1, ob.y + 1, ob.w - 2, ob.h - 2);
+      ctx.fillStyle = "#8e1f1f";
+      ctx.fillRect(ob.x, ob.y, 5, ob.h);               // 书脊
+      ctx.strokeStyle = "#ffb3b3";
+      ctx.lineWidth = 1;
+      for (let k = 0; k < 3; k++) {
+        ctx.beginPath();
+        ctx.moveTo(ob.x + 8, ob.y + 7 + k * 7);
+        ctx.lineTo(ob.x + ob.w - 5, ob.y + 7 + k * 7);
+        ctx.stroke();
+      }
+    } else if (ob.kind === "paper") {
+      ctx.fillStyle = ob.color;
+      ctx.strokeStyle = "#b9c2cc";
+      ctx.lineWidth = 2;
+      ctx.fillRect(ob.x, ob.y, ob.w, ob.h);
+      ctx.strokeRect(ob.x + 1, ob.y + 1, ob.w - 2, ob.h - 2);
+      ctx.strokeStyle = "#8fa4bb";
+      ctx.lineWidth = 1;
+      for (let k = 0; k < 5; k++) {
+        ctx.beginPath();
+        ctx.moveTo(ob.x + 4, ob.y + 9 + k * 8);
+        ctx.lineTo(ob.x + ob.w - 4, ob.y + 9 + k * 8);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#e63946";                       // 红笔批改
+      ctx.font = "bold 13px sans-serif";
+      ctx.fillText("0", ob.x + 7, ob.y + ob.h - 4);
+    } else if (ob.kind === "frisbee") {
+      ctx.beginPath();
+      ctx.ellipse(ob.x + ob.w / 2, ob.y + ob.h / 2, ob.w / 2, ob.h / 2, 0, 0, Math.PI * 2);
+      ctx.fillStyle = ob.color;
+      ctx.fill();
+      ctx.strokeStyle = "#c99a00";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(ob.x + ob.w / 2, ob.y + ob.h / 2, ob.w / 4, ob.h / 4, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = "#fff3c4";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    } else if (ob.kind === "bridge") {
+      ctx.fillStyle = ob.color;
+      ctx.strokeStyle = "#55616e";
+      ctx.lineWidth = 2;
+      ctx.fillRect(ob.x, ob.y, ob.w, ob.h);
+      ctx.strokeRect(ob.x + 1, ob.y + 1, ob.w - 2, ob.h - 2);
+      ctx.strokeStyle = "#6d7b8c";
+      ctx.beginPath();
+      ctx.moveTo(ob.x, ob.y + 14);
+      ctx.lineTo(ob.x + ob.w, ob.y + 14);
+      ctx.stroke();
+      for (let k = 0; k * 24 + 12 < ob.w; k++) {
+        const xk = ob.x + 12 + k * 24;
+        ctx.beginPath();
+        ctx.moveTo(xk, ob.y + 14);
+        ctx.lineTo(xk, ob.y + ob.h);
+        ctx.stroke();
+      }
+    } else if (ob.kind === "animal") {
+      // 小动物：棕色身体 + 脑袋 + 耳朵 + 腿
+      ctx.fillStyle = ob.color;
+      ctx.strokeStyle = "#5c3517";
+      ctx.lineWidth = 2;
+      roundRect(ob.x + 2, ob.y + 10, ob.w - 6, ob.h - 14, 8);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(ob.x + 8, ob.y + 9, 8, 0, Math.PI * 2);
+      ctx.fillStyle = "#a06733";
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#a06733";                       // 耳朵
+      ctx.beginPath();
+      ctx.arc(ob.x + 3, ob.y + 3, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(ob.x + 13, ob.y + 3, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#1b1b1b";                       // 眼睛
+      ctx.beginPath();
+      ctx.arc(ob.x + 6, ob.y + 8, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#5c3517";                       // 腿
+      ctx.fillRect(ob.x + 9, ob.y + ob.h - 5, 4, 5);
+      ctx.fillRect(ob.x + ob.w - 13, ob.y + ob.h - 5, 4, 5);
+    }
+    ctx.restore();
+  },
+
+  drawPlayer() {
+    const p = this.player;
+    if (!p) return;
+
+    // 【无敌帧】角色闪烁：受伤后 1 秒内以 10Hz 闪烁
+    const inv = this.elapsed < p.invUntil;
+    if (inv && Math.floor(this.elapsed * 10) % 2 === 0) return;
+
+    const top = p.y;
+    const cx = PLAYER_X + HEAD_SIZE / 2;
+
+    // 落地阴影
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,0.12)";
+    ctx.beginPath();
+    ctx.ellipse(cx, GROUND_Y + 4, 18, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // 头部 = 校徽 40x40
+    if (assets.head) ctx.drawImage(assets.head, PLAYER_X, top, HEAD_SIZE, HEAD_SIZE);
+
+    // 火柴人身体（蓝色线条）
+    ctx.save();
+    ctx.strokeStyle = STICK_COLOR;
+    ctx.lineWidth = 4.5;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    const shoulder = top + 36;
+    const hip = top + 74;
+    const foot = top + PLAYER_H - 2;
+
+    // 躯干
+    ctx.beginPath();
+    ctx.moveTo(cx, shoulder);
+    ctx.lineTo(cx, hip);
+    ctx.stroke();
+
+    // 双臂
+    ctx.beginPath();
+    ctx.moveTo(cx, shoulder + 8);
+    ctx.lineTo(cx - 15, shoulder + 24);
+    ctx.moveTo(cx, shoulder + 8);
+    ctx.lineTo(cx + 15, shoulder + 24);
+    ctx.stroke();
+
+    // 双腿：落地时摆动（跑动感），空中时收腿
+    const grounded = p.y + PLAYER_H >= GROUND_Y - 0.5 || p.onPlatform;
+    if (grounded && p.vy === 0) {
+      const swing = Math.sin(this.elapsed * 14) * 5;
+      ctx.beginPath();
+      ctx.moveTo(cx, hip);
+      ctx.lineTo(cx - 8 - swing, foot);
+      ctx.moveTo(cx, hip);
+      ctx.lineTo(cx + 8 + swing, foot);
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(cx, hip);
+      ctx.lineTo(cx - 7, hip + 15);
+      ctx.lineTo(cx - 9, foot - 4);
+      ctx.moveTo(cx, hip);
+      ctx.lineTo(cx + 7, hip + 15);
+      ctx.lineTo(cx + 5, foot - 6);
+    }
+    ctx.stroke();
+    ctx.restore();
+  },
+
+  drawHUD() {
+    // 左上角血条底板
+    ctx.fillStyle = "rgba(15,20,28,0.55)";
+    roundRect(12, 12, 214, 30, 8);
+    ctx.fill();
+
+    // 红底
+    ctx.fillStyle = "#7a1f1f";
+    roundRect(20, 19, 150, 16, 6);
+    ctx.fill();
+
+    // 绿条：长度随血量动态变化
+    const ratio = Math.max(0, this.hp / MAX_HP);
+    if (ratio > 0) {
+      ctx.fillStyle = "#2fbf71";
+      roundRect(20, 19, 150 * ratio, 16, 6);
+      ctx.fill();
+    }
+
+    ctx.fillStyle = "#e8eef5";
+    ctx.font = "bold 12px 'Microsoft YaHei', sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(`${this.hp}/${MAX_HP}`, 180, 27);
+
+    // 右上角：存活时间 + 目标时间 + 玉兰花数量
+    ctx.fillStyle = "rgba(15,20,28,0.55)";
+    roundRect(500, 12, 288, 56, 10);
+    ctx.fill();
+
+    ctx.font = "bold 14px 'Microsoft YaHei', sans-serif";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#e8eef5";
+    ctx.fillText(
+      `存活时间: ${Math.floor(this.elapsed)}秒 / 目标: ${this.targetTime}秒`,
+      776, 30
+    );
+    ctx.fillStyle = "#ff9ec4";
+    ctx.fillText(`收集玉兰花：${this.petalCount} 朵`, 776, 54);
+
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+  }
+};
+
+/** 圆角矩形路径 */
+function roundRect(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+/* ============================================================
+   固定步长帧循环
+   ============================================================ */
+function loop(ts) {
+  if (!game.running) return;
+  let dt = (ts - game.lastTs) / 1000;
+  if (!isFinite(dt) || dt < 0) dt = 0;
+  if (dt > 0.1) dt = 0.1;          // 切后台回来不要一次跳太多帧
+  game.lastTs = ts;
+  game.acc += dt;
+
+  let guard = 0;
+  while (game.acc >= STEP && game.running && guard < 6) {
+    game.step();
+    game.acc -= STEP;
+    guard++;
+  }
+  game.draw();
+  if (game.running) game.rafId = requestAnimationFrame(loop);
+}
+
+/* ============================================================
+   【多页面切换】StartFrame / PlayFrame / EndFrame
+   ============================================================ */
+const startScreen = document.getElementById("startScreen");
+const endScreen = document.getElementById("endScreen");
+const endTitle = document.getElementById("endTitle");
+const endInfo = document.getElementById("endInfo");
+const endComment = document.getElementById("endComment");
+const loadHint = document.getElementById("loadHint");
+
+function hideScreens() {
+  startScreen.classList.add("hidden");
+  endScreen.classList.add("hidden");
+}
+
+function showStart() {
+  game.stopLoop();
+  game.state = "start";
+  endScreen.classList.add("hidden");
+  startScreen.classList.remove("hidden");
+}
+
+function showEnd(won) {
+  const d = game.difficulty;
+  const secs = Math.min(Math.floor(game.elapsed), game.targetTime);
+  const petals = game.petalCount;
+
+  endTitle.textContent = won ? "恭喜！成功赶上早八！" : "早八迟到，挑战失败！";
+  endTitle.className = "endTitle " + (won ? "win" : "lose");
+
+  endInfo.innerHTML =
+    `难度：<b>${d}</b> · 目标：${game.targetTime} 秒<br>` +
+    `坚持了 ${secs} 秒<br>` +
+    `收集玉兰花：<b>${petals}</b> 朵`;
+
+  /* 评语：花瓣数 >= 10 为“骄傲”，否则“要努力学习哦” */
+  if (petals >= 10) {
+    endComment.textContent = "你是大工的骄傲！";
+    endComment.className = "comment gold";
+  } else {
+    endComment.textContent = "要努力学习哦";
+    endComment.className = "comment";
+  }
+
+  startScreen.classList.add("hidden");
+  endScreen.classList.remove("hidden");
+}
+
+/* ---------- 难度按钮：把难度名传给 game.startGame ---------- */
+const diffBox = document.getElementById("diffButtons");
+DIFF_ORDER.forEach(name => {
+  const d = DIFFICULTIES[name];
+  const btn = document.createElement("button");
+  btn.className = "diffBtn";
+  btn.style.borderColor = d.color;
+  btn.style.color = d.color;
+  btn.innerHTML =
+    `<span class="dName">${name}</span>` +
+    `<span class="dMeta">${d.target}秒 · ${d.mult}倍速</span>`;
+  btn.disabled = true;                    // 资源加载完成前禁止开局
+  btn.addEventListener("click", () => game.startGame(name));
+  diffBox.appendChild(btn);
+});
+
+/* ---------- 结算按钮 ---------- */
+document.getElementById("againBtn").addEventListener("click", showStart);
+document.getElementById("quitBtn").addEventListener("click", () => {
+  window.close();                       // 浏览器允许时直接关闭
+  setTimeout(() => {
+    if (!document.hidden && game.state === "end") showStart();
+  }, 120);
+});
+
+/* ============================================================
+   输入绑定：空格 + 触屏 / 鼠标点击
+   ============================================================ */
+window.addEventListener("keydown", e => {
+  if (e.code === "Space" || e.key === " ") {
+    e.preventDefault();
+    game.jump();
+  }
+});
+window.addEventListener("keyup", e => {
+  if (e.code === "Space" || e.key === " ") game.releaseJump();
+});
+
+const stage = document.getElementById("stage");
+stage.addEventListener("pointerdown", e => {
+  if (game.state === "play") {
+    e.preventDefault();
+    game.jump();
+  }
+});
+stage.addEventListener("pointerup", () => game.releaseJump());
+stage.addEventListener("pointercancel", () => game.releaseJump());
+stage.addEventListener("contextmenu", e => e.preventDefault());
+
+/* ============================================================
+   启动：加载校徽 + 12 张背景并像素化（仅执行一次，之后缓存）
+   ============================================================ */
+(async function boot() {
+  try {
+    const logo = await loadImage("assets/logo.png");
+    assets.head = logo;
+    document.getElementById("startLogo").src = logo.src;
+    document.getElementById("endLogo").src = logo.src;
+
+    const loaded = await Promise.all(BG_FILES.map(async f => {
+      try { return pixelate(await loadImage(f)); }
+      catch (err) { console.warn(err); return null; }
+    }));
+    assets.backgrounds = loaded.filter(Boolean);
+    if (!assets.backgrounds.length) throw new Error("背景图片全部加载失败");
+
+    // 先渲染一帧开始界面背后的画面
+    game.draw();
+    document.querySelectorAll(".diffBtn").forEach(b => { b.disabled = false; });
+    loadHint.textContent = "空格 / 点击屏幕跳跃 · 5 档难度任选";
+  } catch (err) {
+    console.error(err);
+    loadHint.textContent = "资源加载失败，请检查 assets 目录";
+  }
+})();
+
+})();
+</script>
+</body>
+</html>
